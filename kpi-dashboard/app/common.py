@@ -34,7 +34,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS activities (
   id TEXT PRIMARY KEY, emp TEXT, dt TEXT, kind TEXT, direction TEXT, duration INTEGER,
   is_lpr INTEGER, secretary INTEGER, next_step INTEGER, status TEXT,
-  has_protocol INTEGER, has_summary INTEGER, subject TEXT, client TEXT);
+  has_protocol INTEGER, has_summary INTEGER, subject TEXT, client TEXT, closed_dt TEXT);
 CREATE INDEX IF NOT EXISTS ix_act ON activities(emp, dt);
 
 CREATE TABLE IF NOT EXISTS tenders (
@@ -53,15 +53,24 @@ CREATE TABLE IF NOT EXISTS leads (
 CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY, emp TEXT, name TEXT, need INTEGER, strategy INTEGER, updated TEXT);
 
+-- состояние клиентов на конец месяца: при синхронизации перезаписывается только текущий месяц
+CREATE TABLE IF NOT EXISTS clients_monthly (
+  month TEXT, id TEXT, emp TEXT, name TEXT, need INTEGER, strategy INTEGER, PRIMARY KEY (month, id));
+
 CREATE TABLE IF NOT EXISTS kp (
   id TEXT PRIMARY KEY, emp TEXT, dt TEXT, client TEXT, amount REAL,
   out_of_tender INTEGER, confirmed INTEGER, source TEXT);
+
+-- исходящие письма с КП и вложением в карточках сделок Б24 (подтверждение отправки КП)
+CREATE TABLE IF NOT EXISTS kp_letters (
+  id TEXT PRIMARY KEY, emp TEXT, dt TEXT, deal TEXT, subject TEXT);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY, emp TEXT, title TEXT, created TEXT, deadline TEXT, closed TEXT, status TEXT);
 
 CREATE TABLE IF NOT EXISTS sales (
-  id TEXT PRIMARY KEY, emp TEXT, dt TEXT, doc TEXT, client TEXT, revenue REAL, cost REAL, signed INTEGER);
+  id TEXT PRIMARY KEY, emp TEXT, dt TEXT, doc TEXT, client TEXT, revenue REAL, cost REAL, signed INTEGER,
+  signed_date TEXT);
 
 CREATE TABLE IF NOT EXISTS receivables (
   id TEXT PRIMARY KEY, emp TEXT, doc TEXT, client TEXT, ship_date TEXT, due_date TEXT,
@@ -105,15 +114,30 @@ CREATE TABLE IF NOT EXISTS sync_log (
 """
 
 # таблицы, которые полностью перезаписываются при синхронизации
-SYNC_TABLES = ["activities", "tenders", "deals", "leads", "clients", "kp", "tasks", "sales",
+SYNC_TABLES = ["activities", "tenders", "deals", "leads", "clients", "kp", "kp_letters", "tasks", "sales",
                "receivables", "guarantees", "penalties", "supplier_orders", "supply_funnel"]
 
+# столбцы, добавленные после первой версии: в старых базах их создаёт migrate()
+ADDED_COLUMNS = {"activities": [("closed_dt", "TEXT")], "sales": [("signed_date", "TEXT")]}
 
-def connect():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    con = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+
+def migrate(con):
+    for table, cols in ADDED_COLUMNS.items():
+        have = table_columns(con, table)
+        for name, ctype in cols:
+            if name not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ctype}")
+    con.commit()
+
+
+def connect(path=None):
+    if path is None:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        path = DB_PATH
+    con = sqlite3.connect(path, check_same_thread=False, timeout=30)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    migrate(con)
     return con
 
 
@@ -125,8 +149,10 @@ def table_columns(con, table):
     return [r[1] for r in con.execute(f"PRAGMA table_info({table})")]
 
 
-def replace_rows(con, table, rows, emps=None, date_field=None, date_from=None):
-    """Заменить данные таблицы: удаляет записи сотрудников emps (за период, если задан) и вставляет rows."""
+def replace_rows(con, table, rows, emps=None, date_field=None, date_from=None, commit=True):
+    """Заменить данные таблицы: удаляет записи сотрудников emps (за период, если задан) и вставляет rows.
+
+    commit=False — не фиксировать транзакцию (вызывающий сам делает commit под db_lock)."""
     cols = table_columns(con, table)
     with _db_lock:
         if emps is None:
@@ -143,7 +169,8 @@ def replace_rows(con, table, rows, emps=None, date_field=None, date_from=None):
             con.execute(
                 f"INSERT OR REPLACE INTO {table} ({','.join(keys)}) VALUES ({','.join('?' * len(keys))})",
                 [r[k] for k in keys])
-        con.commit()
+        if commit:
+            con.commit()
 
 
 # ---------- даты ----------
@@ -184,30 +211,36 @@ def quarter_months(month):
     return [f"{y:04d}-{q0 + i:02d}" for i in range(3)]
 
 
-def working_days(first, last, holidays):
+def working_days(first, last, holidays, workdays=None):
+    """Рабочие дни с first по last включительно. holidays — праздники, workdays — рабочие субботы/воскресенья (переносы)."""
     hol = set(holidays or [])
+    extra = set(workdays or [])
     n = 0
     d = first
     while d <= last:
-        if d.weekday() < 5 and d.isoformat() not in hol:
+        iso = d.isoformat()
+        if (d.weekday() < 5 and iso not in hol) or iso in extra:
             n += 1
         d += dt.timedelta(days=1)
     return n
 
 
-def business_days_between(a, b, holidays):
+def business_days_between(a, b, holidays, workdays=None):
     """Количество рабочих дней после a до b включительно (0, если b <= a)."""
     if not a or not b or b <= a:
         return 0
-    return working_days(a + dt.timedelta(days=1), b, holidays)
+    return working_days(a + dt.timedelta(days=1), b, holidays, workdays)
 
 
 def weeks_of_month(month):
-    """Понедельники недель, которые пересекаются с месяцем."""
+    """Понедельники недель месяца. Неделя относится к месяцу, на который приходится её четверг,
+    поэтому каждая неделя (и её оценка) попадает ровно в один месяц."""
     first, last = month_bounds(month)
     monday = first - dt.timedelta(days=first.weekday())
+    if monday + dt.timedelta(days=3) < first:
+        monday += dt.timedelta(days=7)
     res = []
-    while monday <= last:
+    while monday + dt.timedelta(days=3) <= last:
         res.append(monday.isoformat())
         monday += dt.timedelta(days=7)
     return res

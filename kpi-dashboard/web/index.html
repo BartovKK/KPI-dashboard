@@ -127,6 +127,8 @@ select, input[type=text], input[type=password], input[type=number] { background:
 .alert.critical { border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); background: var(--bad-soft); }
 .alert.critical .ic { background: var(--bad); color: var(--surface); }
 .alert.info .ic { background: var(--info); color: var(--surface); }
+.alert.warning { border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); background: var(--warn-soft); }
+.alert.warning .ic { background: var(--warn); color: var(--surface); }
 .alert a { color: inherit; font-weight: 600; }
 
 /* --- матрица команды */
@@ -528,7 +530,8 @@ details.more[open] > summary::before { transform: rotate(90deg); }
   function renderTeam(ov) {
     const main = document.getElementById("main");
     const t = ov.totals, inProg = ov.month === state.boot.current_month;
-    const alerts = ov.alerts.filter((a) => a.level === "critical").concat(ov.alerts.filter((a) => a.level !== "critical"));
+    const rank = { critical: 0, warning: 1 };
+    const alerts = ov.alerts.slice().sort((a, b) => (rank[a.level] ?? 2) - (rank[b.level] ?? 2));
     main.innerHTML = `
       <div class="head"><div><div class="eyebrow">Общий дашборд руководителя</div><h1>KPI команды · ${mLabel(ov.month)}</h1>
         <div class="sub">${inProg ? "Месяц ещё идёт: показано выполнение на сегодня, выплата по итогам месяца может измениться." : "Итоги месяца по правилам из регламентов KPI."}</div></div></div>
@@ -539,7 +542,7 @@ details.more[open] > summary::before { transform: rotate(90deg); }
         <div class="panel stat"><div class="eyebrow">KPI полностью</div><div class="v">${t.full} <small>из ${t.employees}</small></div><div class="h">получают 100% премии</div></div>
       </section>
       ${alerts.length ? `<section class="panel"><div class="panel-h"><h2>Требует внимания</h2><span class="muted small">${alerts.length}</span></div>
-        <div class="panel-b alerts">${alerts.slice(0, 8).map((a) => `<div class="alert ${a.level}"><span class="ic" aria-hidden="true">${a.level === "critical" ? "!" : "i"}</span>
+        <div class="panel-b alerts">${alerts.slice(0, 8).map((a) => `<div class="alert ${a.level}"><span class="ic" aria-hidden="true">${a.level === "info" ? "i" : "!"}</span>
         <div><a href="#emp-${a.login}" data-login="${a.login}">${esc(a.name)}</a> — ${esc(a.text)}</div></div>`).join("")}
         ${alerts.length > 8 ? `<div class="muted small">и ещё ${alerts.length - 8}</div>` : ""}</div></section>` : ""}
       ${ov.groups.map((g) => `<section class="panel">

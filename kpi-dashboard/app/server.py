@@ -3,9 +3,12 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import math
 import os
+import re
 import secrets
 import threading
+import time
 import traceback
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +21,15 @@ from .engine import CRITERIA_TITLES, Engine
 WEB = os.path.join(ROOT, "web")
 PAGE_HEAD = (b'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
              b'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>')
+MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+PLAN_METRICS = {"gross_profit", "revenue"}
+# защита от подбора пароля: не больше LOGIN_MAX_FAILS неудачных попыток за LOGIN_WINDOW секунд
+LOGIN_MAX_FAILS = 10
+LOGIN_WINDOW = 15 * 60
+
+
+class BadRequest(Exception):
+    pass
 
 
 def hash_password(password, salt=None):
@@ -39,7 +51,18 @@ class App:
         self.rules = load_rules()
         self.con = connect()
         self.engine = Engine(self.con, self.rules, self.config)
-        self.lock = threading.RLock()
+        # та же блокировка, под которой синхронизация пишет в базу: расчёт не увидит недописанные таблицы
+        self.lock = db_lock()
+        self.login_fails = {}  # (ip, login) -> [время неудачных попыток]
+
+    def login_blocked(self, key):
+        now = time.monotonic()
+        fails = [t for t in self.login_fails.get(key, []) if now - t < LOGIN_WINDOW]
+        self.login_fails[key] = fails
+        return len(fails) >= LOGIN_MAX_FAILS
+
+    def login_failed(self, key):
+        self.login_fails.setdefault(key, []).append(time.monotonic())
 
     def user(self, login):
         return next((e for e in self.config["employees"] if e["login"] == login), None)
@@ -139,8 +162,47 @@ class Handler(BaseHTTPRequestHandler):
         if not n:
             return {}
         if "application/json" not in (self.headers.get("Content-Type") or ""):
-            raise ValueError("Ожидается JSON")
-        return json.loads(self.rfile.read(n).decode("utf-8"))
+            raise BadRequest("Ожидается JSON")
+        try:
+            b = json.loads(self.rfile.read(n).decode("utf-8"))
+        except ValueError:
+            raise BadRequest("Некорректный JSON")
+        if not isinstance(b, dict):
+            raise BadRequest("Некорректный JSON")
+        return b
+
+    # ---------- проверка параметров
+    @staticmethod
+    def month_param(v):
+        if not isinstance(v, str) or not MONTH_RE.match(v):
+            raise BadRequest("Месяц указывается в формате ГГГГ-ММ")
+        return v
+
+    @staticmethod
+    def number_param(v, lo=0.0, hi=None):
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            raise BadRequest("Значение должно быть числом")
+        if not math.isfinite(x) or x < lo or (hi is not None and x > hi):
+            raise BadRequest(f"Значение должно быть от {lo:g}" + (f" до {hi:g}" if hi is not None else ""))
+        return x
+
+    def employee_param(self, login):
+        e = self.app.engine.employee(login) if isinstance(login, str) else None
+        if not e or not e.get("position"):
+            raise BadRequest("Сотрудник не найден")
+        return login
+
+    @staticmethod
+    def week_param(v):
+        try:
+            d = dt.date.fromisoformat(v)
+        except (TypeError, ValueError):
+            raise BadRequest("Неделя указывается датой понедельника ГГГГ-ММ-ДД")
+        if d.weekday() != 0:
+            raise BadRequest("Неделя указывается датой понедельника")
+        return v
 
     # ---------- маршруты
     def do_GET(self):
@@ -162,14 +224,20 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/login" and method == "POST":
                 b = self.body()
-                login = (b.get("login") or "").strip().lower()
+                login = str(b.get("login") or "").strip().lower()
+                key = (self.client_address[0], login)
                 with app.lock:
-                    ok = app.check_password(login, b.get("password") or "")
+                    if app.login_blocked(key):
+                        return self.send_json({"error": "Слишком много неудачных попыток входа. Попробуйте через 15 минут"}, 429)
+                    ok = app.check_password(login, str(b.get("password") or ""))
                     if not ok:
+                        app.login_failed(key)
                         return self.send_json({"error": "Неверный логин или пароль"}, 401)
+                    app.login_fails.pop(key, None)
                     tok = app.new_session(login)
-                return self.send_json({"ok": True}, cookie=f"kpi_session={tok}; HttpOnly; SameSite=Lax; Path=/")
-            if path == "/api/logout":
+                secure = "; Secure" if app.config.get("server", {}).get("secure_cookie") else ""
+                return self.send_json({"ok": True}, cookie=f"kpi_session={tok}; HttpOnly; SameSite=Lax; Path=/{secure}")
+            if path == "/api/logout" and method == "POST":
                 with db_lock():
                     app.con.execute("DELETE FROM sessions WHERE token=?", (self.token(),))
                     app.con.commit()
@@ -179,7 +247,7 @@ class Handler(BaseHTTPRequestHandler):
             if not me:
                 return self.send_json({"error": "Требуется вход"}, 401)
             is_mgr = me.get("role") == "manager"
-            month = q.get("month") or current_month()
+            month = self.month_param(q["month"]) if q.get("month") else current_month()
 
             with app.lock:
                 if path == "/api/bootstrap":
@@ -200,37 +268,48 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/score" and method == "POST":
                     b = self.body()
                     score = b.get("score")
-                    if score is not None and not (0 <= float(score) <= 100):
-                        return self.send_json({"error": "Оценка — от 0 до 100"}, 400)
-                    if b.get("criterion") not in CRITERIA_TITLES or not app.engine.employee(b.get("emp")):
-                        return self.send_json({"error": "Неверные параметры"}, 400)
+                    if score is not None:
+                        score = self.number_param(score, 0, 100)
+                    if b.get("criterion") not in CRITERIA_TITLES:
+                        raise BadRequest("Неизвестный критерий оценки")
+                    self.employee_param(b.get("emp"))
+                    self.week_param(b.get("week"))
                     with db_lock():
                         if score is None:
                             app.con.execute("DELETE FROM manual_scores WHERE emp=? AND week=? AND criterion=?",
                                             (b["emp"], b["week"], b["criterion"]))
                         else:
                             app.con.execute("INSERT OR REPLACE INTO manual_scores VALUES (?,?,?,?,?,?,datetime('now'))",
-                                            (b["emp"], b["week"], b["criterion"], float(score), b.get("comment") or "", me["login"]))
+                                            (b["emp"], b["week"], b["criterion"], score, str(b.get("comment") or "")[:500],
+                                             me["login"]))
                         app.con.commit()
                     return self.send_json({"ok": True})
                 if path == "/api/plan" and method == "POST":
                     b = self.body()
+                    metric = b.get("metric", "gross_profit")
+                    if metric not in PLAN_METRICS:
+                        raise BadRequest("Неизвестный показатель плана")
+                    row = (self.employee_param(b.get("emp")), self.month_param(b.get("month")), metric,
+                           self.number_param(b.get("value")))
                     with db_lock():
-                        app.con.execute("INSERT OR REPLACE INTO plans VALUES (?,?,?,?)",
-                                        (b["emp"], b["month"], b.get("metric", "gross_profit"), float(b["value"])))
+                        app.con.execute("INSERT OR REPLACE INTO plans VALUES (?,?,?,?)", row)
                         app.con.commit()
                     return self.send_json({"ok": True})
                 if path == "/api/baseline" and method == "POST":
                     b = self.body()
+                    if b.get("metric", "conversion_last_year") != "conversion_last_year":
+                        raise BadRequest("Неизвестный показатель")
+                    row = (self.employee_param(b.get("emp")), "conversion_last_year", self.number_param(b.get("value"), 0, 1))
                     with db_lock():
-                        app.con.execute("INSERT OR REPLACE INTO baselines VALUES (?,?,?)",
-                                        (b["emp"], b.get("metric", "conversion_last_year"), float(b["value"])))
+                        app.con.execute("INSERT OR REPLACE INTO baselines VALUES (?,?,?)", row)
                         app.con.commit()
                     return self.send_json({"ok": True})
             if path == "/api/sync" and method == "POST":
                 res = sync.run(app.con, app.config)
                 return self.send_json(res)
             return self.send_json({"error": "Не найдено"}, 404)
+        except BadRequest as e:
+            return self.send_json({"error": str(e)}, 400)
         except Exception as e:  # noqa
             traceback.print_exc()
             return self.send_json({"error": f"Ошибка сервера: {e}"}, 500)

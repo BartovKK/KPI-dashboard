@@ -1,0 +1,10 @@
+# локальные настройки с паролями и адресом вебхука
+kpi-dashboard/config.json
+# база создаётся при первом запуске
+kpi-dashboard/data/
+# портативный Python, который скачивает start.ps1
+kpi-dashboard/python/
+# выгрузки 1С в CSV
+kpi-dashboard/imports/
+__pycache__/
+*.pyc
