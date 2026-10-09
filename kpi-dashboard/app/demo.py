@@ -2,7 +2,7 @@
 import datetime as dt
 import random
 
-from .common import SYNC_TABLES, current_month, month_add, month_bounds, replace_rows, today, weeks_of_month
+from .common import SYNC_TABLES, current_month, db_lock, month_add, month_bounds, replace_rows, today, weeks_of_month
 
 CLIENTS = ["ООО «СтройИнвест»", "АО «УралТехМонтаж»", "ГБУ «Дирекция капстроя»", "ООО «ЭнергоСервис»", "МУП «Водоканал»",
            "ПАО «Металлург»", "ООО «ТрансЛогистик»", "АО «Нефтехимпроект»", "ООО «ГородСтрой»", "ФГУП «Связьмонтаж»",
@@ -36,7 +36,7 @@ def generate(con, config):
     t = today()
     months = [month_add(current_month(), -k) for k in range(6, -1, -1)]
     data = {k: [] for k in SYNC_TABLES}
-    scores, plans, baselines = [], [], []
+    scores, plans, baselines, snapshots = [], [], [], []
     uid = [0]
 
     def nid(prefix):
@@ -73,10 +73,12 @@ def generate(con, config):
                 n_meet = {"tender_lead": 5, "tender": 4.5, "pm": 6.5}[pos]
                 for _ in range(max(0, round(rnd.gauss(n_meet * kk * len(days) / 21, 1)))):
                     d = rnd.choice(days)
+                    closed = d + dt.timedelta(days=0 if rnd.random() < 0.9 else rnd.randint(1, 3))
                     data["activities"].append({
                         "id": nid("m"), "emp": emp, "dt": _ts(d, rnd), "kind": "meeting", "direction": "out", "duration": 3600,
                         "is_lpr": int(rnd.random() < 0.85), "secretary": 0, "next_step": 1, "status": "done",
                         "has_protocol": int(rnd.random() < 0.9), "has_summary": int(rnd.random() < 0.92),
+                        "closed_dt": _ts(closed, rnd) if closed <= t else None,
                         "subject": "Встреча: " + rnd.choice(SUBJECTS).lower(), "client": rnd.choice(CLIENTS)})
 
             # --- торги (Б24)
@@ -128,10 +130,15 @@ def generate(con, config):
                 if rnd.random() < 0.08:
                     data["penalties"].append({"id": nid("p"), "emp": emp, "dt": rnd.choice(days).isoformat(),
                                               "amount": round(rnd.uniform(5, 60) * 1e3, -3), "reason": "Несвоевременное предоставление БГ"})
-            if pos == "tender_lead" and mi == 0:
-                for i in range(int(6 + 3 * k)):
-                    data["clients"].append({"id": f"cl-{emp}-{i}", "emp": emp, "name": CLIENTS[i % len(CLIENTS)],
-                                            "need": 1, "strategy": int(rnd.random() < 0.85), "updated": (first - dt.timedelta(days=40)).isoformat()})
+            if pos == "tender_lead":
+                # снимок клиентов на конец каждого месяца; текущее состояние — последний месяц
+                n_cl = int(4 + 3 * k + mi * 0.5)
+                for i in range(n_cl):
+                    row = {"id": f"cl-{emp}-{i}", "emp": emp, "name": CLIENTS[i % len(CLIENTS)],
+                           "need": 1, "strategy": int(rnd.random() < 0.85)}
+                    snapshots.append((month, row["id"], emp, row["name"], row["need"], row["strategy"]))
+                    if month == current_month():
+                        data["clients"].append({**row, "updated": t.isoformat()})
 
             # --- проектный менеджер: сделки, лиды, КП, реализации, дебиторка
             if pos == "pm":
@@ -149,18 +156,26 @@ def generate(con, config):
                                           "qualified_date": _ts(d, rnd), "status": "IN_PROCESS", **flags})
                 for d in days:
                     for _ in range(max(0, int(rnd.gauss(16.5 * kk, 2)))):
-                        data["kp"].append({"id": nid("k"), "emp": emp, "dt": d.isoformat(), "client": rnd.choice(CLIENTS),
+                        confirmed = int(rnd.random() < 0.93)
+                        client = rnd.choice(CLIENTS)
+                        data["kp"].append({"id": nid("k"), "emp": emp, "dt": d.isoformat(), "client": client,
                                            "amount": round(rnd.uniform(30, 2000) * 1e3, -3), "out_of_tender": 0,
-                                           "confirmed": int(rnd.random() < 0.93), "source": "1С"})
+                                           "confirmed": confirmed, "source": "1С"})
+                        if confirmed:
+                            data["kp_letters"].append({"id": nid("e"), "emp": emp, "dt": _ts(d, rnd), "deal": nid("deal"),
+                                                       "subject": f"КП для {client}"})
                 for _ in range(rnd.randint(8, 14)):
                     d = rnd.choice(days)
                     rev = round(rnd.uniform(0.3, 3.2) * 1e6, -3)
                     cost = round(rev * rnd.uniform(0.72, 0.9), -3)
-                    signed = d < t - dt.timedelta(days=5) and rnd.random() < 0.9 or rnd.random() < 0.3
+                    # подписание обеими сторонами — через 0–20 дней после документа, иногда уже в следующем месяце
+                    signed_d = d + dt.timedelta(days=rnd.choice([0, 1, 2, 3, 5, 7, 10, 14, 20]))
+                    signed = signed_d <= t and rnd.random() < 0.95
                     docno = f"УПД-{rnd.randint(1000, 9999)}"
                     client = rnd.choice(CLIENTS)
                     data["sales"].append({"id": nid("s"), "emp": emp, "dt": d.isoformat(), "doc": docno, "client": client,
-                                          "revenue": rev, "cost": cost, "signed": int(signed)})
+                                          "revenue": rev, "cost": cost, "signed": int(signed),
+                                          "signed_date": signed_d.isoformat() if signed else None})
                     due = d + dt.timedelta(days=rnd.choice([10, 14, 21, 30]))
                     late = rnd.random() < 0.1 / kk
                     paid = due + dt.timedelta(days=rnd.randint(1, 20) if late else -rnd.randint(0, 5))
@@ -190,6 +205,19 @@ def generate(con, config):
                         "affiliated": int(rnd.random() < 0.01), "single_source": int(rnd.random() < 0.05),
                         "emergency": int(rnd.random() < 0.04), "justified": int(kp_cnt < 3 and rnd.random() < 0.4),
                         "customer_order": f"ЗК-{rnd.randint(100, 999)}"})
+                # иногда закупка единым лотом разбита на несколько заказов (в том числе ниже порога 500 000 ₽)
+                if rnd.random() < 0.6:
+                    d = rnd.choice(days)
+                    lot, sup, order = f"Лот-{nid('')}", rnd.choice(SUPPLIERS), f"ЗК-{rnd.randint(100, 999)}"
+                    for _ in range(rnd.randint(2, 3)):
+                        plan_d = d + dt.timedelta(days=rnd.randint(5, 20))
+                        data["supplier_orders"].append({
+                            "id": nid("o"), "emp": emp, "doc": f"ЗП-{rnd.randint(1000, 9999)}", "dt": d.isoformat(),
+                            "supplier": sup, "lot": lot, "amount_novat": round(rnd.uniform(2.6, 4.6) * 1e5, -3),
+                            "planned_date": plan_d.isoformat(), "actual_date": plan_d.isoformat() if plan_d <= t else None,
+                            "complete": 1, "defect": 0, "mis_sort": 0, "deferred_share": 0, "deferral_days": 0,
+                            "kp_count": rnd.choice([1, 3]), "relevant": 1, "evidence": 1, "affiliated": 0,
+                            "single_source": 0, "emergency": 0, "justified": 0, "customer_order": order})
                 for i in range(int(rnd.gauss(20, 3) * len(days) / 21)):
                     d = rnd.choice(days)
                     x = rnd.random() * kk
@@ -231,13 +259,16 @@ def generate(con, config):
                      planned_cost=round(r["price"] * 1.04, -3), actual_cost=round(r["price"] * 1.05, -3))
             break
 
-    for table in SYNC_TABLES:
-        replace_rows(con, table, data[table])
-    con.execute("DELETE FROM manual_scores")
-    con.executemany("INSERT OR REPLACE INTO manual_scores (emp, week, criterion, score, comment, author, updated) VALUES (?,?,?,?,?,?,datetime('now'))", scores)
-    con.execute("DELETE FROM plans")
-    con.executemany("INSERT OR REPLACE INTO plans VALUES (?,?,?,?)", plans)
-    con.execute("DELETE FROM baselines")
-    con.executemany("INSERT OR REPLACE INTO baselines VALUES (?,?,?)", baselines)
-    con.commit()
+    with db_lock():
+        for table in SYNC_TABLES:
+            replace_rows(con, table, data[table], commit=False)
+        con.execute("DELETE FROM clients_monthly")
+        con.executemany("INSERT INTO clients_monthly (month, id, emp, name, need, strategy) VALUES (?,?,?,?,?,?)", snapshots)
+        con.execute("DELETE FROM manual_scores")
+        con.executemany("INSERT OR REPLACE INTO manual_scores (emp, week, criterion, score, comment, author, updated) VALUES (?,?,?,?,?,?,datetime('now'))", scores)
+        con.execute("DELETE FROM plans")
+        con.executemany("INSERT OR REPLACE INTO plans VALUES (?,?,?,?)", plans)
+        con.execute("DELETE FROM baselines")
+        con.executemany("INSERT OR REPLACE INTO baselines VALUES (?,?,?)", baselines)
+        con.commit()
     return {k: len(v) for k, v in data.items()}

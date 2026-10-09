@@ -43,13 +43,18 @@ def main():
             print("Воронки сделок:", [(c["id"], c["name"]) for c in r["result"]["categories"]])
         except Exception as e:  # noqa
             print("Битрикс24: ошибка —", e)
-        try:
-            from app.onec import OneC
-            print("1С: проверка", cfg["onec"]["base_url"])
-            OneC(cfg["onec"])._get(cfg["onec"]["base_url"].rstrip("/") + "/odata/standard.odata/?$format=json")
-            print("1С: OData отвечает")
-        except Exception as e:  # noqa
-            print("1С (OData):", e)
+        from app.common import today
+        from app.onec import OneC
+        onec = OneC(cfg["onec"])
+        print("1С: проверка", cfg["onec"]["base_url"])
+        for name, ds in cfg["onec"].get("datasets", {}).items():
+            if name.startswith("_"):
+                continue
+            try:
+                rows = onec._load(ds, today(), today())
+                print(f"1С → {name} ({ds.get('source', 'http')}): OK, строк за сегодня: {len(rows)}")
+            except Exception as e:  # noqa
+                print(f"1С → {name} ({ds.get('source', 'http')}): ошибка — {e}")
     elif cmd == "preview":
         from build_preview import build
         print("Готово:", build())

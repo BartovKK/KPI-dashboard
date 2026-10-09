@@ -101,8 +101,9 @@ class Bitrix24:
         self.log("Б24: дела CRM")
         acts = self.list_all("crm.activity.list", {
             "filter": {"RESPONSIBLE_ID": uids, ">=CREATED": df},
-            "select": ["ID", "OWNER_TYPE_ID", "OWNER_ID", "TYPE_ID", "PROVIDER_ID", "CREATED", "START_TIME", "END_TIME",
-                       "COMPLETED", "SUBJECT", "DESCRIPTION", "RESPONSIBLE_ID", "STORAGE_ELEMENT_IDS", "FILES", "LAST_UPDATED"],
+            "select": ["ID", "OWNER_TYPE_ID", "OWNER_ID", "TYPE_ID", "PROVIDER_ID", "DIRECTION", "CREATED", "START_TIME",
+                       "END_TIME", "COMPLETED", "SUBJECT", "DESCRIPTION", "RESPONSIBLE_ID", "STORAGE_ELEMENT_IDS", "FILES",
+                       "LAST_UPDATED"],
             "order": {"ID": "ASC"}})
         by_owner = {}
         for a in acts:
@@ -113,14 +114,28 @@ class Bitrix24:
         calls = self.list_all("voximplant.statistic.get", {
             "FILTER": {">=CALL_START_DATE": df, "PORTAL_USER_ID": uids, "CALL_TYPE": 1},
             "SORT": "CALL_START_DATE", "ORDER": "ASC"})
-        contact_ids = [c["CRM_ENTITY_ID"] for c in calls if c.get("CRM_ENTITY_TYPE") == "CONTACT"]
-        contact_ids += [a["OWNER_ID"] for a in acts if str(a["OWNER_TYPE_ID"]) == "3"]
+        # к чему привязаны звонки и встречи: контакт, компания или лид
+        bound = {"CONTACT": set(), "COMPANY": set(), "LEAD": set()}
+        for c in calls:
+            if c.get("CRM_ENTITY_TYPE") in bound and c.get("CRM_ENTITY_ID"):
+                bound[c["CRM_ENTITY_TYPE"]].add(str(c["CRM_ENTITY_ID"]))
+        type_names = {v: k for k, v in OWNER_TYPES.items()}
+        for a in acts:
+            t = type_names.get(int(a.get("OWNER_TYPE_ID") or 0))
+            if t in bound and a.get("OWNER_ID"):
+                bound[t].add(str(a["OWNER_ID"]))
+
         lpr_field = self.f.get("contact_is_lpr")
-        contacts = self.by_ids("crm.contact.list", contact_ids, ["ID", "POST", "COMPANY_ID"] + ([lpr_field] if lpr_field else []))
+        lead_lpr_field = self.f.get("lead_lpr")
+        contact_select = ["ID", "NAME", "LAST_NAME", "POST", "COMPANY_ID"] + ([lpr_field] if lpr_field else [])
+        contacts = self.by_ids("crm.contact.list", bound["CONTACT"], contact_select)
+        companies_of_calls = self.by_ids("crm.company.list",
+                                         bound["COMPANY"] | {str(c["COMPANY_ID"]) for c in contacts.values() if c.get("COMPANY_ID")},
+                                         ["ID", "TITLE"])
+        leads_of_calls = self.by_ids("crm.lead.list", bound["LEAD"], ["ID", "TITLE"] + ([lead_lpr_field] if lead_lpr_field else []))
         secr = [s.lower() for s in self.cfg.get("secretary_posts", [])]
 
-        def contact_flags(cid):
-            c = contacts.get(str(cid))
+        def contact_flags(c):
             if not c:
                 return 0, 0
             post = (c.get("POST") or "").lower()
@@ -128,15 +143,39 @@ class Bitrix24:
             is_lpr = self.flag(c.get(lpr_field)) if lpr_field else int(bool(post) and not is_secr)
             return is_lpr, is_secr
 
+        # компании, у которых в CRM уже есть контакт-ЛПР: звонок по такой компании даёт «информацию об ЛПР»
+        company_has_lpr = set()
+        company_ids = sorted(bound["COMPANY"], key=int)
+        for i in range(0, len(company_ids), 50):
+            for c in self.list_all("crm.contact.list", {"filter": {"COMPANY_ID": company_ids[i:i + 50]},
+                                                        "select": contact_select}):
+                if contact_flags(c)[0]:
+                    company_has_lpr.add(str(c.get("COMPANY_ID")))
+
+        def entity_info(etype, eid):
+            """(есть ЛПР, секретарь, название клиента) для сущности CRM, к которой привязан звонок или встреча."""
+            eid = str(eid)
+            if etype == "CONTACT":
+                c = contacts.get(eid)
+                if not c:
+                    return 0, 0, ""
+                name = companies_of_calls.get(str(c.get("COMPANY_ID")), {}).get("TITLE") or \
+                    " ".join(x for x in (c.get("NAME"), c.get("LAST_NAME")) if x)
+                return (*contact_flags(c), name)
+            if etype == "COMPANY":
+                return int(eid in company_has_lpr), 0, companies_of_calls.get(eid, {}).get("TITLE", "")
+            if etype == "LEAD":
+                ld = leads_of_calls.get(eid, {})
+                return (self.flag(ld.get(lead_lpr_field)) if lead_lpr_field else 0), 0, ld.get("TITLE", "")
+            return 0, 0, ""
+
         rows = []
         for c in calls:
             login = emp(c.get("PORTAL_USER_ID"))
             if not login:
                 continue
             start = str(c.get("CALL_START_DATE"))[:19]
-            is_lpr, is_secr = (0, 0)
-            if c.get("CRM_ENTITY_TYPE") == "CONTACT":
-                is_lpr, is_secr = contact_flags(c.get("CRM_ENTITY_ID"))
+            is_lpr, is_secr, client = entity_info(c.get("CRM_ENTITY_TYPE"), c.get("CRM_ENTITY_ID"))
             owner = (OWNER_TYPES.get(c.get("CRM_ENTITY_TYPE"), 0), str(c.get("CRM_ENTITY_ID")))
             t0 = dt.datetime.fromisoformat(start)
             nxt = 0
@@ -149,21 +188,43 @@ class Bitrix24:
                     break
             rows.append({"id": "call" + str(c["ID"]), "emp": login, "dt": start, "kind": "call", "direction": "out",
                          "duration": int(c.get("CALL_DURATION") or 0), "is_lpr": is_lpr, "secretary": is_secr,
-                         "next_step": nxt, "status": "done", "subject": "", "client": c.get("CRM_ENTITY_TYPE", "")})
+                         "next_step": nxt, "status": "done", "subject": "", "client": client})
         for a in acts:
             if str(a.get("TYPE_ID")) != "1":  # 1 — встреча
                 continue
             login = emp(a.get("RESPONSIBLE_ID"))
             if not login:
                 continue
-            is_lpr = contact_flags(a["OWNER_ID"])[0] if str(a["OWNER_TYPE_ID"]) == "3" else 1
+            etype = type_names.get(int(a.get("OWNER_TYPE_ID") or 0))
+            is_lpr, _, client = entity_info(etype, a["OWNER_ID"])
+            if etype not in ("CONTACT", "LEAD"):
+                is_lpr = 1  # встреча по сделке или компании
             files = a.get("STORAGE_ELEMENT_IDS") or a.get("FILES")
+            done = a.get("COMPLETED") == "Y"
             rows.append({"id": "act" + str(a["ID"]), "emp": login, "dt": self.iso(a.get("START_TIME")), "kind": "meeting",
                          "direction": "out", "duration": 0, "is_lpr": is_lpr, "secretary": 0, "next_step": 1,
-                         "status": "done" if a.get("COMPLETED") == "Y" else "planned", "has_protocol": int(bool(files)),
+                         "status": "done" if done else "planned", "has_protocol": int(bool(files)),
                          "has_summary": int(len((a.get("DESCRIPTION") or "").strip()) >= 20),
-                         "subject": a.get("SUBJECT"), "client": ""})
+                         # точной даты закрытия дела в REST нет — берём дату последнего изменения
+                         "closed_dt": self.iso(a.get("LAST_UPDATED")) if done else None,
+                         "subject": a.get("SUBJECT"), "client": client})
         out["activities"] = rows
+
+        # исходящие письма с КП и вложением в карточках сделок — подтверждение отправки КП (ПМ, KPI 4)
+        kw = [k.lower() for k in self.cfg.get("kp_email_keywords", [])]
+        letters = []
+        for a in acts:
+            if str(a.get("TYPE_ID")) != "4" or str(a.get("DIRECTION")) != "2" or str(a.get("OWNER_TYPE_ID")) != "2":
+                continue  # 4 — e-mail, 2 — исходящее, 2 — сделка
+            text = f"{a.get('SUBJECT') or ''} {a.get('DESCRIPTION') or ''}".lower()
+            if kw and not any(k in text for k in kw):
+                continue
+            login = emp(a.get("RESPONSIBLE_ID"))
+            if not login or not (a.get("STORAGE_ELEMENT_IDS") or a.get("FILES")):
+                continue
+            letters.append({"id": "mail" + str(a["ID"]), "emp": login, "dt": self.iso(a.get("START_TIME") or a.get("CREATED")),
+                            "deal": str(a["OWNER_ID"]), "subject": a.get("SUBJECT")})
+        out["kp_letters"] = letters
 
         # тендеры: сделки воронки тендеров + история стадий
         self.log("Б24: торги")
