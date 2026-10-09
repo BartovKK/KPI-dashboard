@@ -1,0 +1,103 @@
+{
+  "_comment": "Скопируйте этот файл в config.json и заполните. mode: demo — демо-данные, live — данные из Битрикс24 и 1С.",
+  "mode": "demo",
+
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "session_hours": 12
+  },
+
+  "sync": {
+    "interval_minutes": 60,
+    "months_back": 6
+  },
+
+  "_holidays_comment": "Нерабочие праздничные дни (производственный календарь РФ). Используются для расчёта норм «в день».",
+  "holidays": [
+    "2026-01-01", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09",
+    "2026-02-23", "2026-03-09", "2026-05-01", "2026-05-11", "2026-06-12", "2026-11-04", "2026-12-31"
+  ],
+
+  "bitrix24": {
+    "_comment": "Входящий вебхук: Битрикс24 → Разработчикам → Другое → Входящий вебхук. Права: crm, telephony, tasks, user.",
+    "webhook": "https://ВАШ-ПОРТАЛ.bitrix24.ru/rest/1/КЛЮЧ/",
+
+    "tender_category_id": 1,
+    "sales_category_id": 0,
+
+    "_stages_comment": "ID стадий воронок (Б24 → CRM → Сделки → Настройки воронок; или метод crm.status.list). В воронке тендеров нужны 3 контрольные точки.",
+    "tender_stages": {
+      "in_work": ["C1:PREPARATION"],
+      "price_review": ["C1:EXECUTING"],
+      "submitted": ["C1:PREPAYMENT_INVOICE"]
+    },
+
+    "_fields_comment": "Коды пользовательских полей (UF_CRM_...). Их видно в настройках полей карточки или через crm.deal.fields / crm.lead.fields / crm.contact.fields / crm.company.fields.",
+    "fields": {
+      "deal_planned_cost": "UF_CRM_PLANNED_COST",
+      "deal_actual_cost": "UF_CRM_ACTUAL_COST",
+      "contact_is_lpr": "UF_CRM_IS_LPR",
+      "company_need": "UF_CRM_NEED_IDENTIFIED",
+      "company_strategy": "UF_CRM_WORK_STRATEGY",
+      "lead_need": "UF_CRM_LEAD_NEED",
+      "lead_budget": "UF_CRM_LEAD_BUDGET",
+      "lead_lpr": "UF_CRM_LEAD_LPR",
+      "lead_solvency": "UF_CRM_LEAD_SOLVENCY",
+      "lead_next_step": "UF_CRM_LEAD_NEXT_STEP",
+      "lead_first_contact": "UF_CRM_LEAD_FIRST_CONTACT"
+    },
+    "lead_qualified_statuses": ["IN_PROCESS", "CONVERTED"],
+    "secretary_posts": ["секретар", "офис-менеджер", "ресепшн", "приёмная", "приемная"],
+    "kp_email_keywords": ["КП", "коммерческое предложение"],
+    "min_call_seconds": 120
+  },
+
+  "onec": {
+    "_comment": "Подключение к 1С. Для каждого набора данных source = http (HTTP-сервис 1С, рекомендуется), odata (стандартный OData-интерфейс) или csv (файл выгрузки). Формат полей — в README, раздел «Данные из 1С».",
+    "base_url": "http://СЕРВЕР-1С/БАЗА/",
+    "user": "kpi_reader",
+    "password": "",
+    "verify_ssl": true,
+
+    "datasets": {
+      "sales":           { "source": "http", "path": "hs/kpi/sales" },
+      "kp":              { "source": "http", "path": "hs/kpi/kp" },
+      "receivables":     { "source": "http", "path": "hs/kpi/receivables" },
+      "guarantees":      { "source": "http", "path": "hs/kpi/guarantees" },
+      "penalties":       { "source": "http", "path": "hs/kpi/penalties" },
+      "supplier_orders": { "source": "http", "path": "hs/kpi/supplier_orders" },
+      "supply_funnel":   { "source": "http", "path": "hs/kpi/supply_funnel" },
+
+      "_odata_example": {
+        "source": "odata",
+        "entity": "Document_РеализацияТоваровУслуг",
+        "filter": "Posted eq true and Date ge datetime'{date_from}T00:00:00' and Date le datetime'{date_to}T23:59:59'",
+        "expand": "Менеджер",
+        "map": {
+          "id": "Ref_Key",
+          "manager": "Менеджер/Description",
+          "dt": "Date",
+          "doc": "Number",
+          "revenue": "СуммаДокумента",
+          "cost": "СебестоимостьДокумента",
+          "signed": "ОригиналПолучен"
+        }
+      },
+      "_csv_example": { "source": "csv", "file": "imports/sales.csv", "delimiter": ";" }
+    }
+  },
+
+  "_employees_comment": "login — вход в дашборд; b24_user_id — ID пользователя в Битрикс24; onec_manager — ФИО (или GUID) менеджера/ответственного в 1С. role: manager видит всех, employee — только себя. position — ключ из kpi_rules.json.",
+  "employees": [
+    { "login": "boss",       "name": "Руководитель отдела",  "role": "manager" },
+    { "login": "sokolova",   "name": "Анна Соколова",     "position": "tender_lead", "role": "employee", "b24_user_id": 11, "onec_manager": "Соколова Анна Сергеевна" },
+    { "login": "petrov",     "name": "Илья Петров",       "position": "tender",      "role": "employee", "b24_user_id": 12, "onec_manager": "Петров Илья Андреевич" },
+    { "login": "melnikova",  "name": "Дарья Мельникова",  "position": "tender",      "role": "employee", "b24_user_id": 13, "onec_manager": "Мельникова Дарья Олеговна" },
+    { "login": "kuznetsov",  "name": "Артём Кузнецов",    "position": "pm",          "role": "employee", "b24_user_id": 14, "onec_manager": "Кузнецов Артём Викторович" },
+    { "login": "orlova",     "name": "Мария Орлова",      "position": "pm",          "role": "employee", "b24_user_id": 15, "onec_manager": "Орлова Мария Игоревна" },
+    { "login": "zakharov",   "name": "Денис Захаров",     "position": "pm",          "role": "employee", "b24_user_id": 16, "onec_manager": "Захаров Денис Павлович" },
+    { "login": "lebedev",    "name": "Олег Лебедев",      "position": "supply",      "role": "employee", "b24_user_id": 17, "onec_manager": "Лебедев Олег Николаевич" },
+    { "login": "fedorova",   "name": "Ксения Фёдорова",   "position": "supply",      "role": "employee", "b24_user_id": 18, "onec_manager": "Фёдорова Ксения Алексеевна" }
+  ]
+}

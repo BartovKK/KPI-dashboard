@@ -1,0 +1,704 @@
+<title>KPI-ведомость отдела</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Макет: «ведомость» — слева состав команды, справа лист месяца: итог → матрица пунктов KPI → карточки пунктов. */
+:root {
+  --bg: #f4f6f6;
+  --surface: #ffffff;
+  --surface-2: #eef1f1;
+  --line: #dde3e3;
+  --line-strong: #c3cccc;
+  --fg: #142022;
+  --fg-2: #4b5a5c;
+  --fg-3: #7a8789;
+  --accent: #0e6a74;
+  --accent-soft: #dcefef;
+  --accent-ink: #ffffff;
+  --good: #128a3a;
+  --good-soft: #def3e4;
+  --warn: #b97800;
+  --warn-soft: #fbf0d6;
+  --bad: #c9372f;
+  --bad-soft: #fbe3e1;
+  --info: #3657b8;
+  --info-soft: #e3e9fa;
+  --muted-soft: #eceeee;
+  --bar: #0e6a74;
+  --bar-2: #9cc9cd;
+  --shadow: 0 1px 2px rgba(20, 32, 34, .06), 0 4px 16px rgba(20, 32, 34, .04);
+  --font: "Golos Text", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1617; --surface: #172122; --surface-2: #1d2a2b; --line: #2a3839; --line-strong: #3b4c4d;
+    --fg: #e6eeee; --fg-2: #a9b8b9; --fg-3: #7d8d8e; --accent: #4fc1cc; --accent-soft: #173a3d; --accent-ink: #062022;
+    --good: #43c66a; --good-soft: #163522; --warn: #f0b429; --warn-soft: #3a2f12; --bad: #f06a5f; --bad-soft: #3d1c1a;
+    --info: #8ea8ff; --info-soft: #1f2846; --muted-soft: #222e2f; --bar: #4fc1cc; --bar-2: #24585d;
+    --shadow: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1617; --surface: #172122; --surface-2: #1d2a2b; --line: #2a3839; --line-strong: #3b4c4d;
+  --fg: #e6eeee; --fg-2: #a9b8b9; --fg-3: #7d8d8e; --accent: #4fc1cc; --accent-soft: #173a3d; --accent-ink: #062022;
+  --good: #43c66a; --good-soft: #163522; --warn: #f0b429; --warn-soft: #3a2f12; --bad: #f06a5f; --bad-soft: #3d1c1a;
+  --info: #8ea8ff; --info-soft: #1f2846; --muted-soft: #222e2f; --bar: #4fc1cc; --bar-2: #24585d;
+  --shadow: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.muted { color: var(--fg-3); }
+.small { font-size: 12px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+h1 { font-size: 22px; letter-spacing: -.01em; }
+h2 { font-size: 16px; }
+h3 { font-size: 14px; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3); font-weight: 600; }
+
+/* --- верхняя панель */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; margin-right: auto; min-width: 0; }
+.brand-mark { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center;
+  font: 600 11px var(--mono); }
+.brand small { font-weight: 400; color: var(--fg-3); }
+.ctrl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+select, input[type=text], input[type=password], input[type=number] { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px;
+  padding: 6px 10px; min-height: 34px; }
+.btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 6px 12px; min-height: 34px; font-weight: 500; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.08); color: var(--accent-ink); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn[disabled] { opacity: .5; cursor: default; }
+.sync { font-size: 12px; color: var(--fg-3); display: flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); display: inline-block; flex: none; }
+.dot.ok { background: var(--good); } .dot.err { background: var(--bad); } .dot.demo { background: var(--warn); }
+
+/* --- каркас */
+.shell { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100% - 56px); }
+.shell.single { grid-template-columns: minmax(0, 1fr); }
+.side { border-right: 1px solid var(--line); background: var(--surface); padding: 16px 12px; display: flex; flex-direction: column; gap: 14px; }
+.side a { text-decoration: none; color: inherit; }
+.nav-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 10px; border-radius: 8px; align-items: center; }
+.nav-item:hover { background: var(--surface-2); }
+.nav-item.active { background: var(--accent-soft); }
+.nav-item .nm { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-item .pct { font: 500 12px var(--mono); color: var(--fg-2); }
+.nav-item .mini { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.nav-item .mini i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group > .eyebrow { padding: 0 10px 4px; }
+.main { padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 20px; min-width: 0; max-width: 1400px; }
+
+/* --- общие блоки */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); min-width: 0; }
+.panel-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px 10px; }
+.panel-b { padding: 0 16px 16px; }
+.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.head .sub { color: var(--fg-2); margin-top: 4px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.stat { padding: 14px 16px; }
+.stat .v { font: 600 26px/1.15 var(--mono); letter-spacing: -.02em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 14px; color: var(--fg-3); font-weight: 500; }
+.stat .h { font-size: 12px; color: var(--fg-3); margin-top: 4px; }
+
+/* --- статусы */
+.chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 9px 2px 7px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.s-met { color: var(--good); background: var(--good-soft); }
+.s-close { color: var(--warn); background: var(--warn-soft); }
+.s-fail { color: var(--bad); background: var(--bad-soft); }
+.s-nodata { color: var(--fg-3); background: var(--muted-soft); }
+.s-awaiting { color: var(--info); background: var(--info-soft); }
+.s-progress { color: var(--fg-2); background: var(--muted-soft); }
+.s-progress::before { background: transparent; border: 1.5px solid currentColor; width: 5px; height: 5px; }
+
+.alerts { display: flex; flex-direction: column; gap: 8px; }
+.alert { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+.alert .ic { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 700 12px var(--mono); }
+.alert.critical { border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); background: var(--bad-soft); }
+.alert.critical .ic { background: var(--bad); color: var(--surface); }
+.alert.info .ic { background: var(--info); color: var(--surface); }
+.alert a { color: inherit; font-weight: 600; }
+
+/* --- матрица команды */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+.matrix th, .matrix td { padding: 8px 10px; border-top: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.matrix thead th { border-top: 0; font-size: 11px; font-weight: 600; color: var(--fg-3); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.matrix thead th .kt { display: block; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--fg-2); font-size: 12px;
+  white-space: normal; min-width: 96px; max-width: 150px; line-height: 1.25; margin-top: 2px; }
+.matrix tbody tr { cursor: pointer; }
+.matrix tbody tr:hover td { background: var(--surface-2); }
+.matrix .who { font-weight: 600; white-space: nowrap; }
+.cell { display: flex; flex-direction: column; gap: 3px; min-width: 84px; }
+.cell .p { font: 600 13px var(--mono); }
+.cell .r { font: 400 11px var(--mono); color: var(--fg-3); }
+.cell .bar { height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.cell .bar i { display: block; height: 100%; border-radius: 2px; }
+.c-met .p { color: var(--good); } .c-met .bar i { background: var(--good); }
+.c-close .p { color: var(--warn); } .c-close .bar i { background: var(--warn); }
+.c-fail .p { color: var(--bad); } .c-fail .bar i { background: var(--bad); }
+.c-nodata .p, .c-progress .p { color: var(--fg-2); } .c-nodata .bar i, .c-progress .bar i { background: var(--fg-3); }
+.c-awaiting .p { color: var(--info); } .c-awaiting .bar i { background: var(--info); }
+.total { font: 600 14px var(--mono); white-space: nowrap; }
+.total.zero { color: var(--bad); }
+.spark { display: block; }
+
+/* --- сотрудник */
+.hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0; }
+.hero > div { padding: 16px 18px; min-width: 0; }
+.hero > div + div { border-left: 1px solid var(--line); }
+.big { font: 600 40px/1 var(--mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.big small { font-size: 16px; color: var(--fg-3); font-weight: 500; letter-spacing: 0; }
+.weights { display: flex; gap: 3px; margin-top: 14px; height: 30px; }
+.weights .seg { position: relative; border-radius: 4px; display: flex; align-items: center; justify-content: center; font: 600 11px var(--mono);
+  min-width: 0; overflow: hidden; border: 1.5px solid var(--line-strong); color: var(--fg-3); background: var(--surface); cursor: default; }
+.weights .seg.met { background: var(--good); border-color: var(--good); color: var(--surface); }
+.weights .seg.zeroed { background: repeating-linear-gradient(135deg, var(--bad-soft) 0 5px, var(--surface) 5px 10px); border-color: var(--bad); color: var(--bad); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--fg-3); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.kv div b { display: block; font: 600 15px var(--mono); margin-top: 2px; }
+
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.card { display: flex; flex-direction: column; }
+.card-h { padding: 14px 16px 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; }
+.card-h .meta { font: 500 12px var(--mono); color: var(--fg-3); }
+.card-h h3 { font-size: 15px; grid-column: 1; }
+.card-h .tgt { grid-column: 1 / -1; font-size: 12px; color: var(--fg-2); }
+.card-score { grid-row: 1 / span 2; grid-column: 2; text-align: right; }
+.card-score .p { font: 600 26px/1 var(--mono); letter-spacing: -.02em; }
+.card-score .r { font: 500 12px var(--mono); color: var(--fg-3); margin-top: 4px; }
+.card-b { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 12px; }
+.comp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+.comp .n { font-size: 13px; color: var(--fg); }
+.comp .n .src { font-size: 11px; color: var(--fg-3); margin-left: 4px; white-space: nowrap; }
+.comp .v { font: 500 13px var(--mono); white-space: nowrap; text-align: right; }
+.comp .v .t { color: var(--fg-3); }
+.track { grid-column: 1 / -1; position: relative; height: 8px; border-radius: 4px; background: var(--surface-2); }
+.track .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--bar); }
+.track .goal { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); border-radius: 1px; }
+.track .pace { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg-3); border-radius: 1px; opacity: .8; }
+.comp.ok .fill { background: var(--good); }
+.comp.bad .fill { background: var(--bad); }
+.comp.mid .fill { background: var(--warn); }
+.comp.info .fill { background: var(--fg-3); }
+.comp.na .n { color: var(--fg-3); }
+.extra { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; }
+.extra div { color: var(--fg-2); min-width: 0; }
+.extra b { font: 500 12px var(--mono); color: var(--fg); }
+.zero-note { padding: 8px 10px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); font-size: 12px; font-weight: 500; }
+details.more { border-top: 1px solid var(--line); }
+details.more > summary { list-style: none; padding: 10px 16px; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; display: flex; gap: 8px; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: "›"; transition: transform .15s; display: inline-block; }
+details.more[open] > summary::before { transform: rotate(90deg); }
+.more-b { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 12px; }
+.desc { font-size: 12px; color: var(--fg-2); max-width: 70ch; }
+.dt { font-size: 12px; }
+.dt th, .dt td { padding: 5px 8px; border-top: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.dt th { color: var(--fg-3); font-weight: 600; border-top: 0; }
+.dt td.n { font-family: var(--mono); text-align: right; }
+.dt-wrap { max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.funnel { display: flex; flex-direction: column; gap: 4px; }
+.funnel .row { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 48px; gap: 8px; align-items: center; font-size: 12px; }
+.funnel .row span:first-child { color: var(--fg-2); }
+.funnel .fb { height: 14px; border-radius: 3px; background: var(--bar-2); }
+.funnel .row:last-child .fb { background: var(--bar); }
+.funnel .row b { font: 500 12px var(--mono); text-align: right; }
+
+.manual { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+.manual table { font-size: 12px; }
+.manual th, .manual td { padding: 3px 6px; text-align: left; }
+.manual th { color: var(--fg-3); font-weight: 600; }
+.manual select { min-height: 28px; padding: 2px 6px; }
+.manual input[type=text] { min-height: 28px; padding: 2px 8px; width: 100%; min-width: 140px; }
+.inline-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.inline-form input { width: 140px; min-height: 30px; }
+
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--fg-3); font: 11px var(--mono); }
+.chart .lbl { fill: var(--fg-2); }
+.tip { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); padding: 6px 9px; border-radius: 6px; font-size: 12px;
+  white-space: nowrap; transform: translate(-50%, -110%); z-index: 5; }
+.tip b { font-family: var(--mono); }
+
+/* --- вход */
+.login { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; }
+.login form { width: min(380px, 100%); padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.login label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-2); }
+.err { color: var(--bad); font-size: 13px; min-height: 18px; }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg);
+  padding: 9px 14px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: var(--shadow); }
+.drawer { position: fixed; inset: 0; background: rgba(10, 18, 19, .45); z-index: 40; display: flex; justify-content: flex-end; }
+.drawer > div { width: min(640px, 100%); height: 100%; overflow: auto; background: var(--surface); padding: 20px 22px calc(28px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 16px; }
+.rule { border-top: 1px solid var(--line); padding-top: 12px; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 12px; }
+.rule .w { font: 600 13px var(--mono); color: var(--accent); }
+.rule p { margin: 2px 0 0; font-size: 13px; color: var(--fg-2); }
+.preview-bar { background: var(--warn-soft); color: var(--fg); border-bottom: 1px solid var(--line); padding: 8px 20px; font-size: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.preview-bar select { min-height: 28px; padding: 2px 8px; }
+.empty { padding: 40px 16px; text-align: center; color: var(--fg-3); }
+
+@media (max-width: 1100px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; overflow-x: auto; padding: 10px 16px; gap: 6px; }
+  .nav-group { flex-direction: row; gap: 6px; }
+  .nav-group > .eyebrow { display: none; }
+  .nav-item { min-width: 150px; border: 1px solid var(--line); }
+  .main { padding: 16px 16px 40px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .hero > div + div { border-left: 0; border-top: 1px solid var(--line); }
+  .top { padding: 10px 16px; }
+  .brand small { display: none; }
+}
+@media (max-width: 480px) {
+  .kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .extra { grid-template-columns: minmax(0, 1fr); }
+  .big { font-size: 32px; }
+  .funnel .row { grid-template-columns: minmax(0, 120px) minmax(0, 1fr) 40px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="root"></div>
+
+<script>
+/* __PREVIEW_DATA__ */
+(function () {
+  "use strict";
+  const PREVIEW = window.__PREVIEW__ || null;
+  const root = document.getElementById("root");
+  const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  const MSHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+  const STATUS = {
+    met: ["Выполнен", "s-met"], close: ["Почти: 80–99%", "s-close"], fail: ["Не выполнен", "s-fail"],
+    nodata: ["Нет данных", "s-nodata"], awaiting: ["Ждёт оценки", "s-awaiting"],
+    progress_fail: ["Месяц идёт", "s-progress"], progress_close: ["Месяц идёт", "s-progress"], progress_nodata: ["Месяц идёт", "s-progress"],
+  };
+  const state = { boot: null, month: null, view: "team", login: null, data: null, loading: false, previewRole: "manager" };
+
+  // ---------- форматирование
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const nf = (v, d = 0) => (v == null || isNaN(v) ? "—" : Number(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }));
+  const rub = (v) => (v == null ? "—" : nf(Math.round(v)) + " ₽");
+  const pct = (v, d = 0) => (v == null ? "—" : nf(v * 100, d) + "%");
+  const mLabel = (m) => { const [y, mm] = m.split("-"); return MONTHS[+mm - 1] + " " + y; };
+  const mShort = (m) => { const [y, mm] = m.split("-"); return MSHORT[+mm - 1] + (mm === "01" ? " " + y.slice(2) : ""); };
+  const dLabel = (iso) => { const d = new Date(iso + "T00:00:00"); return d.getDate() + " " + MONTHS_GEN[d.getMonth()]; };
+  const statusKey = (s) => (s || "nodata").startsWith("progress") ? "progress" : s;
+  function fmtVal(v, unit) {
+    if (v == null) return "—";
+    if (unit === "%") return nf(v * 100, 1) + "%";
+    if (unit === "₽") return rub(v);
+    if (unit === "дн") return nf(v, 1) + " дн";
+    if (unit === "балл") return nf(v, 0);
+    return nf(v, 0);
+  }
+  function fmtTarget(c) {
+    const op = c.op === "<=" ? "≤ " : "";
+    if (c.target == null) return "";
+    if (c.unit === "балл") return "из 100";
+    return "норма " + op + fmtVal(c.target, c.unit);
+  }
+  function fmtExtra(x) {
+    if (x.fmt === "pct") return pct(x.value, 1);
+    if (x.fmt === "rub") return rub(x.value);
+    if (typeof x.value === "number") return nf(x.value, Number.isInteger(x.value) ? 0 : 1);
+    return esc(x.value);
+  }
+  function fmtCell(v, col, isPct) {
+    if (v == null || v === "") return "—";
+    if (typeof v === "number") {
+      if (isPct) return pct(v, 1);
+      if (/₽/.test(col)) return nf(Math.round(v));
+      return nf(v, Number.isInteger(v) ? 0 : 1);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v.split("-").reverse().join(".");
+    return esc(v);
+  }
+
+  // ---------- API
+  async function api(path, body) {
+    if (PREVIEW) return previewApi(path, body);
+    const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+    const j = await r.json().catch(() => ({ error: "Сервер вернул некорректный ответ" }));
+    if (r.status === 401 && path !== "/api/login") { renderLogin(); throw new Error("auth"); }
+    if (!r.ok) throw new Error(j.error || "Ошибка " + r.status);
+    return j;
+  }
+  function previewApi(path, body) {
+    const u = new URL(path, "http://x");
+    const m = u.searchParams.get("month");
+    if (u.pathname === "/api/bootstrap") {
+      const b = JSON.parse(JSON.stringify(PREVIEW.bootstrap));
+      if (state.previewRole !== "manager") {
+        const e = b.employees.find((x) => x.login === state.previewRole);
+        b.me = { login: e.login, name: e.name, role: "employee" };
+        b.employees = [e];
+      }
+      return Promise.resolve(b);
+    }
+    if (u.pathname === "/api/overview") return PREVIEW.overview[m] ? Promise.resolve(PREVIEW.overview[m]) : Promise.reject(new Error("В превью доступны только последние месяцы"));
+    if (u.pathname === "/api/employee") {
+      const d = (PREVIEW.employee[u.searchParams.get("login")] || {})[m];
+      return d ? Promise.resolve(d) : Promise.reject(new Error("В превью доступны только последние месяцы"));
+    }
+    if (body) { toast("В превью изменения не сохраняются. На сервере оценка сразу пересчитает KPI."); return Promise.resolve({ ok: true }); }
+    return Promise.reject(new Error("Нет данных"));
+  }
+  let toastTimer;
+  function toast(msg) {
+    let t = document.querySelector(".toast");
+    if (!t) { t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
+  }
+
+  // ---------- вход
+  function renderLogin() {
+    root.innerHTML = `<div class="login"><form class="panel" id="loginForm">
+      <div class="brand"><span class="brand-mark">KPI</span><span>KPI-ведомость</span></div>
+      <p class="muted small" style="margin:0">Войдите под своей учётной записью. Сотрудник видит свой дашборд, руководитель — всю команду.</p>
+      <label for="lg">Логин<input id="lg" type="text" autocomplete="username" required></label>
+      <label for="pw">Пароль<input id="pw" type="password" autocomplete="current-password" required></label>
+      <div class="err" id="lerr"></div>
+      <button class="btn primary" type="submit">Войти</button></form></div>`;
+    document.getElementById("loginForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      try { await api("/api/login", { login: lg.value, password: pw.value }); start(); }
+      catch (e) { document.getElementById("lerr").textContent = e.message; }
+    });
+  }
+
+  // ---------- каркас
+  async function start() {
+    try { state.boot = await api("/api/bootstrap"); } catch (e) { if (e.message !== "auth") root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+    const b = state.boot;
+    const months = PREVIEW ? PREVIEW.months : b.months;
+    if (!state.month || !months.includes(state.month)) state.month = PREVIEW ? PREVIEW.default_month : b.current_month;
+    const isMgr = b.me.role === "manager";
+    const h = (location.hash || "").replace("#", "");
+    if (!isMgr) { state.view = "emp"; state.login = b.me.login; }
+    else if (h.startsWith("emp-") && b.employees.some((e) => e.login === h.slice(4))) { state.view = "emp"; state.login = h.slice(4); }
+    else { state.view = "team"; }
+    renderShell();
+    load();
+  }
+
+  function syncInfo() {
+    const b = state.boot, s = b.last_sync;
+    if (b.mode === "demo") return `<span class="sync"><span class="dot demo"></span>Демо-данные</span>`;
+    if (!s) return `<span class="sync"><span class="dot"></span>Данные ещё не загружены</span>`;
+    const t = (s.finished || "").replace("T", " ").slice(0, 16);
+    return `<span class="sync" title="${esc(s.message)}"><span class="dot ${s.status === "ok" ? "ok" : "err"}"></span>Б24 и 1С: ${esc(t)}</span>`;
+  }
+
+  function renderShell() {
+    const b = state.boot, isMgr = b.me.role === "manager";
+    const months = PREVIEW ? PREVIEW.months : b.months;
+    const pv = PREVIEW ? `<div class="preview-bar"><b>Превью на демо-данных.</b>
+      <span>Это интерфейс дашборда; рабочая версия запускается на вашем сервере и берёт данные из Битрикс24 и 1С.</span>
+      <label for="pvRole">Смотреть как:</label><select id="pvRole"><option value="manager">Руководитель (вся команда)</option>
+      ${PREVIEW.bootstrap.employees.map((e) => `<option value="${e.login}" ${state.previewRole === e.login ? "selected" : ""}>Сотрудник: ${esc(e.name)}</option>`).join("")}</select></div>` : "";
+    root.innerHTML = `${pv}<header class="top">
+        <div class="brand"><span class="brand-mark">KPI</span><span>KPI-ведомость <small>· ОП и ОС</small></span></div>
+        <div class="ctrl">
+          ${syncInfo()}
+          <label class="muted small" for="month">Период</label>
+          <select id="month">${months.map((m) => `<option value="${m}" ${m === state.month ? "selected" : ""}>${mLabel(m)}</option>`).join("")}</select>
+          <button class="btn" id="rulesBtn" type="button">Методика</button>
+          ${isMgr && !PREVIEW ? `<button class="btn" id="syncBtn" type="button">Обновить данные</button>` : ""}
+          <span class="small muted">${esc(b.me.name)}</span>
+          ${PREVIEW ? "" : `<button class="btn ghost" id="logoutBtn" type="button">Выйти</button>`}
+        </div></header>
+      <div class="shell ${isMgr ? "" : "single"}">${isMgr ? `<nav class="side" id="side" aria-label="Команда"></nav>` : ""}<main class="main" id="main"><div class="empty">Загрузка…</div></main></div>`;
+    document.getElementById("month").addEventListener("change", (e) => { state.month = e.target.value; load(); });
+    document.getElementById("rulesBtn").addEventListener("click", showRules);
+    const sb = document.getElementById("syncBtn");
+    if (sb) sb.addEventListener("click", async () => {
+      sb.disabled = true; sb.textContent = "Загружаю…";
+      try { const r = await api("/api/sync", {}); toast(r.status === "ok" ? "Данные обновлены" : "Обновлено с ошибками: " + r.message.split("\n").filter((x) => x.startsWith("Ошибка")).join("; ")); state.boot = await api("/api/bootstrap"); renderShell(); load(); }
+      catch (e) { toast(e.message); sb.disabled = false; sb.textContent = "Обновить данные"; }
+    });
+    const lo = document.getElementById("logoutBtn");
+    if (lo) lo.addEventListener("click", async () => { await api("/api/logout", {}); renderLogin(); });
+    const pr = document.getElementById("pvRole");
+    if (pr) pr.addEventListener("change", (e) => { state.previewRole = e.target.value; location.hash = ""; start(); });
+  }
+
+  function renderSide(ov) {
+    const side = document.getElementById("side");
+    if (!side) return;
+    const b = state.boot;
+    const byLogin = {};
+    if (ov) ov.groups.forEach((g) => g.employees.forEach((e) => (byLogin[e.login] = e)));
+    const groups = {};
+    b.employees.forEach((e) => (groups[e.position] = groups[e.position] || []).push(e));
+    side.innerHTML = `<div class="nav-group"><a href="#team" class="nav-item ${state.view === "team" ? "active" : ""}" data-team><span class="nm">Вся команда</span><span class="pct">${ov ? pct(ov.totals.payout / ov.totals.fund) : ""}</span></a></div>` +
+      Object.entries(groups).map(([pos, list]) => `<div class="nav-group"><div class="eyebrow">${esc(b.positions[pos].title)}</div>${list.map((e) => {
+        const s = byLogin[e.login];
+        return `<a href="#emp-${e.login}" class="nav-item ${state.view === "emp" && state.login === e.login ? "active" : ""}" data-login="${e.login}">
+          <span class="nm">${esc(e.name)}</span><span class="pct">${s ? pct(s.share) : ""}</span>
+          <span class="mini"><i style="width:${s ? Math.min(100, s.share * 100) : 0}%"></i></span></a>`;
+      }).join("")}</div>`).join("");
+    side.querySelectorAll("[data-login]").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); openEmp(a.dataset.login); }));
+    side.querySelector("[data-team]").addEventListener("click", (ev) => { ev.preventDefault(); state.view = "team"; location.hash = "team"; load(); });
+  }
+  function openEmp(login) { state.view = "emp"; state.login = login; location.hash = "emp-" + login; load(); window.scrollTo(0, 0); }
+
+  let sideCache = {};
+  async function load() {
+    const main = document.getElementById("main");
+    main.innerHTML = `<div class="empty">Загрузка…</div>`;
+    const isMgr = state.boot.me.role === "manager";
+    try {
+      if (isMgr && (state.view === "team" || !sideCache[state.month])) {
+        sideCache[state.month] = await api("/api/overview?month=" + state.month);
+      }
+      if (isMgr) renderSide(sideCache[state.month]);
+      if (state.view === "team") renderTeam(sideCache[state.month]);
+      else renderEmp(await api(`/api/employee?login=${encodeURIComponent(state.login)}&month=${state.month}`));
+    } catch (e) {
+      if (e.message !== "auth") main.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    }
+  }
+
+  // ---------- графики
+  function sparkline(trend, w = 96, h = 26) {
+    const pts = trend.map((t, i) => [4 + (i * (w - 8)) / Math.max(1, trend.length - 1), h - 4 - Math.min(1, t.share) * (h - 8)]);
+    const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+    const last = pts[pts.length - 1];
+    return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Доля выплаченного KPI за 6 месяцев: ${trend.map((t) => pct(t.share)).join(", ")}">
+      <line x1="4" x2="${w - 4}" y1="4" y2="4" stroke="var(--line)" stroke-dasharray="2 3"/>
+      <path d="${d} L${last[0]} ${h - 4} L4 ${h - 4} Z" fill="var(--accent-soft)" stroke="none"/>
+      <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${last[0]}" cy="${last[1]}" r="3" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"/></svg>`;
+  }
+
+  function payoutChart(trend, bonus, currentMonth) {
+    const W = 520, H = 190, L = 54, R = 8, T = 14, B = 26;
+    const n = trend.length, bw = Math.min(46, ((W - L - R) / n) * 0.56), step = (W - L - R) / n;
+    const y = (v) => T + (H - T - B) * (1 - v / bonus);
+    const ticks = [0, 0.5, 1].map((k) => k * bonus);
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Выплата KPI по месяцам">`;
+    ticks.forEach((t) => { s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" ${t ? 'stroke-dasharray="3 4"' : ""}/>
+      <text x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${nf(t)}</text>`; });
+    trend.forEach((t, i) => {
+      const x = L + step * i + (step - bw) / 2, v = Math.max(0, t.payout), top = y(v);
+      const inProg = t.month === currentMonth;
+      const hgt = Math.max(0, y(0) - top);
+      const r = Math.min(4, hgt);
+      if (hgt > 0) s += `<path d="M${x} ${y(0)} V${top + r} Q${x} ${top} ${x + r} ${top} H${x + bw - r} Q${x + bw} ${top} ${x + bw} ${top + r} V${y(0)} Z" fill="${inProg ? "var(--bar-2)" : "var(--bar)"}"/>`;
+      else s += `<line x1="${x}" x2="${x + bw}" y1="${y(0) - 1}" y2="${y(0) - 1}" stroke="var(--bad)" stroke-width="2"/>`;
+      s += `<text class="lbl" x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${mShort(t.month)}</text>`;
+      s += `<rect x="${L + step * i}" y="${T}" width="${step}" height="${H - T - B}" fill="transparent" data-i="${i}"/>`;
+    });
+    s += `</svg><div class="tip" hidden></div>`;
+    return s;
+  }
+  function bindChart(el, trend, currentMonth) {
+    const tip = el.querySelector(".tip");
+    el.querySelectorAll("rect[data-i]").forEach((r) => {
+      const show = () => {
+        const t = trend[+r.dataset.i], bb = r.getBoundingClientRect(), pb = el.getBoundingClientRect();
+        tip.innerHTML = `${mLabel(t.month)}${t.month === currentMonth ? " (идёт)" : ""}<br><b>${rub(t.payout)}</b> · ${pct(t.share)} фонда`;
+        tip.style.left = bb.left - pb.left + bb.width / 2 + "px"; tip.style.top = "8px"; tip.hidden = false;
+      };
+      r.addEventListener("mouseenter", show); r.addEventListener("click", show);
+      r.addEventListener("mouseleave", () => (tip.hidden = true));
+    });
+  }
+
+  // ---------- команда
+  function renderTeam(ov) {
+    const main = document.getElementById("main");
+    const t = ov.totals, inProg = ov.month === state.boot.current_month;
+    const alerts = ov.alerts.filter((a) => a.level === "critical").concat(ov.alerts.filter((a) => a.level !== "critical"));
+    main.innerHTML = `
+      <div class="head"><div><div class="eyebrow">Общий дашборд руководителя</div><h1>KPI команды · ${mLabel(ov.month)}</h1>
+        <div class="sub">${inProg ? "Месяц ещё идёт: показано выполнение на сегодня, выплата по итогам месяца может измениться." : "Итоги месяца по правилам из регламентов KPI."}</div></div></div>
+      <section class="stats">
+        <div class="panel stat"><div class="eyebrow">К выплате по KPI</div><div class="v">${nf(t.payout)} <small>₽</small></div><div class="h">из фонда ${rub(t.fund)}</div></div>
+        <div class="panel stat"><div class="eyebrow">Доля фонда</div><div class="v">${pct(t.payout / t.fund)}</div><div class="h">${t.employees} сотрудников</div></div>
+        <div class="panel stat"><div class="eyebrow">Пунктов KPI выполнено</div><div class="v">${t.items_met} <small>из ${t.items}</small></div><div class="h">${pct(t.items_met / t.items)} всех пунктов</div></div>
+        <div class="panel stat"><div class="eyebrow">KPI полностью</div><div class="v">${t.full} <small>из ${t.employees}</small></div><div class="h">получают 100% премии</div></div>
+      </section>
+      ${alerts.length ? `<section class="panel"><div class="panel-h"><h2>Требует внимания</h2><span class="muted small">${alerts.length}</span></div>
+        <div class="panel-b alerts">${alerts.slice(0, 8).map((a) => `<div class="alert ${a.level}"><span class="ic" aria-hidden="true">${a.level === "critical" ? "!" : "i"}</span>
+        <div><a href="#emp-${a.login}" data-login="${a.login}">${esc(a.name)}</a> — ${esc(a.text)}</div></div>`).join("")}
+        ${alerts.length > 8 ? `<div class="muted small">и ещё ${alerts.length - 8}</div>` : ""}</div></section>` : ""}
+      ${ov.groups.map((g) => `<section class="panel">
+        <div class="panel-h"><div><div class="eyebrow">${esc(g.department)}</div><h2>${esc(g.title)}</h2></div>
+          <span class="muted small">оклад ${rub(state.boot.positions[g.position].salary)} + KPI ${rub(state.boot.positions[g.position].kpi_bonus)}</span></div>
+        <div class="scroll"><table class="matrix"><thead><tr><th>Сотрудник</th>
+          ${g.columns.map((c) => `<th>KPI ${c.n} · ${Math.round(c.weight * 100)}%<span class="kt">${esc(c.title)}</span></th>`).join("")}
+          <th>К выплате</th><th>6 мес.</th></tr></thead><tbody>
+          ${g.employees.map((e) => `<tr data-login="${e.login}" tabindex="0"><td class="who">${esc(e.name)}</td>
+            ${e.items.map((i) => { const k = statusKey(i.status); return `<td><div class="cell c-${k}" title="${esc(i.title)}: ${esc((STATUS[i.status] || [""])[0])}">
+              <span class="p">${i.pct == null ? (i.status === "awaiting" ? "оценка" : "—") : pct(i.pct)}</span>
+              <span class="bar"><i style="width:${i.pct == null ? 0 : Math.min(100, i.pct * 100)}%"></i></span>
+              <span class="r">${i.payout ? rub(i.payout) : "0 ₽"} / ${nf(i.amount)}</span></div></td>`; }).join("")}
+            <td><span class="total ${e.zero_all.length ? "zero" : ""}">${rub(e.payout)}</span><div class="muted small">${e.zero_all.length ? "обнулено" : pct(e.share) + " фонда"}</div></td>
+            <td>${sparkline(e.trend)}</td></tr>`).join("")}
+        </tbody></table></div></section>`).join("")}
+      <p class="muted small">Ячейка: процент выполнения норматива пункта (100% — норма выполнена), под ним начислено / максимум по пункту. Выплата: ${state.boot.payout_mode === "binary" ? "пункт оплачивается полностью при выполнении нормы" : "пропорционально выполнению"}. Нажмите на строку, чтобы открыть дашборд сотрудника.</p>`;
+    main.querySelectorAll("tr[data-login]").forEach((tr) => {
+      tr.addEventListener("click", () => openEmp(tr.dataset.login));
+      tr.addEventListener("keydown", (e) => { if (e.key === "Enter") openEmp(tr.dataset.login); });
+    });
+    main.querySelectorAll("a[data-login]").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); openEmp(a.dataset.login); }));
+  }
+
+  // ---------- сотрудник
+  function compRow(c, inProg) {
+    let cls = "na";
+    if (c.pct != null) cls = c.informative ? "info" : c.pct >= 0.9999 ? "ok" : inProg ? "info" : c.pct >= 0.8 ? "mid" : "bad";
+    // шкала: норма в точке 100%/scale; для «меньше — лучше» показываем долю нормы
+    let fillW = 0, goalX = null, paceX = null;
+    if (c.fact != null && c.target != null) {
+      if (c.op === "<=") {
+        const max = Math.max(c.target * 1.5, c.fact, 1e-9);
+        fillW = (c.fact / max) * 100; goalX = (c.target / max) * 100;
+      } else {
+        const max = Math.max(c.target * 1.25, c.fact, 1e-9);
+        fillW = (c.fact / max) * 100; goalX = (c.target / max) * 100;
+        if (c.pace != null) paceX = (c.pace / max) * 100;
+      }
+    }
+    return `<div class="comp ${cls}"><div class="n">${esc(c.name)}<span class="src">· ${esc(c.source || "")}</span></div>
+      <div class="v">${fmtVal(c.fact, c.unit)} <span class="t">${fmtTarget(c)}</span></div>
+      <div class="track" role="img" aria-label="${esc(c.name)}: ${fmtVal(c.fact, c.unit)}, ${fmtTarget(c)}">
+        <div class="fill" style="width:${Math.min(100, fillW).toFixed(1)}%"></div>
+        ${goalX != null ? `<div class="goal" style="left:calc(${goalX.toFixed(1)}% - 1px)" title="Норма"></div>` : ""}
+        ${paceX != null ? `<div class="pace" style="left:calc(${paceX.toFixed(1)}% - 1px)" title="Темп на сегодня: ${fmtVal(c.pace, c.unit)}"></div>` : ""}
+      </div>${c.pace != null ? `<div class="small muted" style="grid-column:1/-1">Темп на сегодня: ${fmtVal(c.pace, c.unit)}</div>` : ""}</div>`;
+  }
+
+  function manualBlock(d, it) {
+    const isMgr = state.boot.me.role === "manager";
+    const crit = it.manual.criteria, titles = state.boot.criteria_titles;
+    const opts = (v) => ["", 100, 75, 50, 25, 0].map((o) => `<option value="${o}" ${String(v ?? "") === String(o) ? "selected" : ""}>${o === "" ? "—" : o}</option>`).join("");
+    return `<div class="manual"><div class="eyebrow">Еженедельная оценка руководителя</div>
+      <div class="scroll"><table><thead><tr><th>Неделя с</th>${crit.map((c) => `<th>${esc(titles[c])}</th>`).join("")}<th>Комментарий</th></tr></thead><tbody>
+      ${d.weeks.map((w, wi) => `<tr><td class="num">${dLabel(w)}</td>${crit.map((c) => {
+        const s = it.manual.weeks[c][wi];
+        return `<td>${isMgr ? `<select aria-label="${esc(titles[c])}, неделя с ${dLabel(w)}" data-score data-week="${w}" data-crit="${c}">${opts(s.score)}</select>` : `<span class="num">${s.score ?? "—"}</span>`}</td>`;
+      }).join("")}<td>${(() => { const cm = crit.map((c) => it.manual.weeks[c][wi].comment).filter(Boolean).join("; ");
+        return isMgr ? `<input type="text" aria-label="Комментарий, неделя с ${dLabel(w)}" data-comment data-week="${w}" value="${esc(cm)}" placeholder="замечания">` : `<span class="small">${esc(cm) || "—"}</span>`; })()}</td></tr>`).join("")}
+      </tbody></table></div>${isMgr ? `<div class="small muted">100 — без замечаний. Пункт выполнен, если средняя оценка за месяц 100.</div>` : ""}</div>`;
+  }
+
+  function renderEmp(d) {
+    const main = document.getElementById("main");
+    const b = state.boot, isMgr = b.me.role === "manager", inProg = d.in_progress;
+    const zeroed = d.zero_all.length > 0;
+    main.innerHTML = `
+      <div class="head"><div><div class="eyebrow">${esc(d.department)} · ${esc(d.position_title)}</div><h1>${esc(d.name)}</h1>
+        <div class="sub">${mLabel(d.month)} · ${inProg ? `идёт ${d.working_days_elapsed}-й рабочий день из ${d.working_days}` : `${d.working_days} рабочих дней`}</div></div>
+        ${isMgr ? `<button class="btn" type="button" id="backBtn">← Вся команда</button>` : ""}</div>
+      <section class="panel hero">
+        <div><div class="eyebrow">${inProg ? "Начислено на сегодня" : "KPI к выплате"}</div>
+          <div class="big" style="margin-top:8px;${zeroed ? "color:var(--bad)" : ""}">${nf(d.payout)} <small>₽ из ${nf(d.kpi_bonus)}</small></div>
+          <div class="weights" role="img" aria-label="Структура KPI по пунктам">${d.items.map((i) => `<div class="seg ${zeroed && i.payout ? "zeroed" : i.payout ? "met" : ""}" style="flex:${i.weight}" title="KPI ${i.n}. ${esc(i.title)} — ${rub(i.payout)} из ${rub(i.amount)}">${i.n}</div>`).join("")}</div>
+          <div class="legend"><span><i style="background:var(--good)"></i>начислено</span><span><i style="border:1.5px solid var(--line-strong)"></i>не начислено</span>${zeroed ? `<span><i style="background:repeating-linear-gradient(135deg,var(--bad-soft) 0 3px,var(--surface) 3px 6px);border:1.5px solid var(--bad)"></i>обнулено</span>` : ""}<span>ширина — вес пункта</span></div>
+          ${zeroed ? d.zero_all.map((z) => `<div class="zero-note" style="margin-top:10px">${esc(z)}</div>`).join("") : ""}
+          <div class="kv"><div><span class="eyebrow">Оклад</span><b>${rub(d.salary)}</b></div><div><span class="eyebrow">Пунктов выполнено</span><b>${d.met_count} из ${d.item_count}</b></div><div><span class="eyebrow">Итого с окладом</span><b>${rub(d.salary + d.payout)}</b></div></div>
+        </div>
+        <div><div class="eyebrow">Выплата KPI за 6 месяцев, ₽</div><div class="chart" id="payChart">${payoutChart(d.trend, d.kpi_bonus, b.current_month)}</div></div>
+      </section>
+      <section class="cards">${d.items.map((i) => {
+        const st = STATUS[i.status] || STATUS.nodata;
+        const ex = i.extra || [];
+        return `<article class="panel card">
+          <div class="card-h"><div class="meta">KPI ${i.n} · вес ${Math.round(i.weight * 100)}% · ${nf(i.amount)} ₽ · ${esc(i.period)}</div>
+            <div class="card-score"><div class="p">${i.pct == null ? "—" : pct(i.pct)}</div><div class="r">${rub(i.payout)}</div></div>
+            <h3>${esc(i.title)}</h3><div class="tgt"><span class="chip ${st[1]}">${st[0]}</span> &nbsp;${esc(i.target_text)}</div></div>
+          <div class="card-b">${i.components.map((c) => compRow(c, inProg)).join("")}
+            ${i.plan && isMgr ? `<form class="inline-form" data-plan="${i.plan.metric}"><label for="plan-${i.n}">План на ${MONTHS[+d.month.slice(5) - 1].toLowerCase()}, ₽</label><input id="plan-${i.n}" type="number" min="0" step="10000" value="${i.plan.value ?? ""}"><button class="btn" type="submit">Сохранить план</button>${i.plan.is_default ? `<span class="muted">сейчас — план по умолчанию</span>` : ""}</form>` : ""}
+            ${i.code === "conversion_sales" && isMgr ? `<form class="inline-form" data-baseline><label for="base-${i.n}">Средняя конверсия прошлого года, %</label><input id="base-${i.n}" type="number" min="0" max="100" step="0.1"><button class="btn" type="submit">Сохранить</button></form>` : ""}
+            ${i.manual ? manualBlock(d, i) : ""}
+            ${ex.length ? `<div class="extra">${ex.map((x) => `<div>${esc(x.label)}: <b>${fmtExtra(x)}</b>${x.hint ? ` <span class="muted">(${esc(x.hint)})</span>` : ""}</div>`).join("")}</div>` : ""}
+          </div>
+          <details class="more"><summary>Как считается и из чего${i.details && i.details.rows.length ? ` · ${i.details.rows.length} записей` : ""}</summary><div class="more-b">
+            <div class="desc">${esc(i.description)}</div>
+            ${i.funnel ? `<div><div class="eyebrow" style="margin-bottom:6px">${esc(i.funnel.title)}</div><div class="funnel">${(() => { const mx = Math.max(1, ...i.funnel.steps.map((s) => s[1])); return i.funnel.steps.map((s) => `<div class="row"><span>${esc(s[0])}</span><div class="fb" style="width:${Math.max(1, (s[1] / mx) * 100)}%"></div><b>${nf(s[1])}</b></div>`).join(""); })()}</div></div>` : ""}
+            ${i.details && i.details.rows.length ? `<div class="dt-wrap"><table class="dt"><thead><tr>${i.details.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>
+              ${i.details.rows.map((r) => `<tr>${r.map((v, ci) => `<td class="${typeof v === "number" ? "n" : ""}">${fmtCell(v, i.details.columns[ci], (i.details.pct_cols || []).includes(ci))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="muted small">Записей за период нет.</div>`}
+          </div></details></article>`;
+      }).join("")}</section>`;
+    bindChart(document.getElementById("payChart"), d.trend, b.current_month);
+    const back = document.getElementById("backBtn");
+    if (back) back.addEventListener("click", () => { state.view = "team"; location.hash = "team"; load(); });
+    main.querySelectorAll("select[data-score]").forEach((s) => s.addEventListener("change", async () => {
+      const row = s.closest("tr"), cm = row.querySelector("[data-comment]");
+      try {
+        await api("/api/score", { emp: d.login, week: s.dataset.week, criterion: s.dataset.crit, score: s.value === "" ? null : +s.value, comment: cm ? cm.value : "" });
+        if (!PREVIEW) { toast("Оценка сохранена, KPI пересчитан"); sideCache = {}; load(); }
+      } catch (e) { toast(e.message); }
+    }));
+    main.querySelectorAll("input[data-comment]").forEach((inp) => inp.addEventListener("change", async () => {
+      const row = inp.closest("tr");
+      const sels = row.querySelectorAll("select[data-score]");
+      try {
+        for (const s of sels) if (s.value !== "") await api("/api/score", { emp: d.login, week: s.dataset.week, criterion: s.dataset.crit, score: +s.value, comment: inp.value });
+        if (!PREVIEW) toast("Комментарий сохранён");
+      } catch (e) { toast(e.message); }
+    }));
+    main.querySelectorAll("form[data-plan]").forEach((f) => f.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      try { await api("/api/plan", { emp: d.login, month: d.month, metric: f.dataset.plan, value: +f.querySelector("input").value }); if (!PREVIEW) { toast("План сохранён"); sideCache = {}; load(); } }
+      catch (e) { toast(e.message); }
+    }));
+    main.querySelectorAll("form[data-baseline]").forEach((f) => f.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      try { await api("/api/baseline", { emp: d.login, metric: "conversion_last_year", value: +f.querySelector("input").value / 100 }); if (!PREVIEW) { toast("Базовый уровень сохранён"); sideCache = {}; load(); } }
+      catch (e) { toast(e.message); }
+    }));
+  }
+
+  // ---------- методика
+  function showRules() {
+    const b = state.boot;
+    const own = b.me.role === "manager" ? Object.keys(b.positions) : [b.employees[0].position];
+    const dr = document.createElement("div");
+    dr.className = "drawer";
+    dr.innerHTML = `<div role="dialog" aria-modal="true" aria-label="Методика расчёта KPI">
+      <div class="head"><div><div class="eyebrow">Методика</div><h1>Правила расчёта KPI</h1></div><button class="btn" type="button" data-close>Закрыть</button></div>
+      <p class="desc" style="margin:0">Правила взяты из регламентов KPI. Пункт с несколькими нормативами считается выполненным, когда выполнены все нормативы; процент выполнения пункта — по самому слабому из них.
+      ${b.payout_mode === "binary" ? "Пункт оплачивается полностью при выполнении 100% норматива." : "Пункт оплачивается пропорционально выполнению."}</p>
+      ${own.map((k) => { const p = b.positions[k]; return `<section style="display:flex;flex-direction:column;gap:10px"><div><div class="eyebrow">${esc(p.department)} · ${esc(p.doc || "")}</div><h2>${esc(p.title)}</h2>
+        <div class="small muted">Оклад ${rub(p.salary)} + KPI ${rub(p.kpi_bonus)}</div></div>
+        ${p.items.map((i) => `<div class="rule"><div class="w">${Math.round(i.weight * 100)}%</div><div><h3>KPI ${i.n}. ${esc(i.title)}</h3>
+          <div class="small muted">${esc(i.period)} · ${esc(i.target_text)} · ${nf(p.kpi_bonus * i.weight)} ₽</div><p>${esc(i.description)}</p></div></div>`).join("")}</section>`; }).join("")}
+    </div>`;
+    document.body.appendChild(dr);
+    const close = () => dr.remove();
+    dr.addEventListener("click", (e) => { if (e.target === dr || e.target.hasAttribute("data-close")) close(); });
+    document.addEventListener("keydown", function k(e) { if (e.key === "Escape") { close(); document.removeEventListener("keydown", k); } });
+    dr.querySelector("[data-close]").focus();
+  }
+
+  window.addEventListener("hashchange", () => {
+    if (!state.boot || state.boot.me.role !== "manager") return;
+    const h = location.hash.replace("#", "");
+    if (h.startsWith("emp-") && h.slice(4) !== state.login) { state.view = "emp"; state.login = h.slice(4); load(); }
+    else if (h === "team" && state.view !== "team") { state.view = "team"; load(); }
+  });
+  start();
+})();
+</script>
